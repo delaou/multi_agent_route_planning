@@ -1,0 +1,7 @@
+{
+  "distribution": "Ubuntu-22.04",
+  "listenPort": 8080,
+  "backendPort": 18080,
+  "checkIntervalMs": 5000,
+  "healthTimeoutMs": 2000
+}

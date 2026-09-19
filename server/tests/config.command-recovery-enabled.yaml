@@ -1,0 +1,4 @@
+mysql:
+  command_recovery_enabled: true
+route_analysis:
+  intersection_min_angle_degrees: 12.0

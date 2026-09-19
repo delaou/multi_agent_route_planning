@@ -1,0 +1,32 @@
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: multi_agent_dispatch
+      MYSQL_USER: dispatch
+      MYSQL_PASSWORD: dispatch_dev_password
+      MYSQL_ROOT_PASSWORD: root_dev_password
+    ports: ["127.0.0.1:3306:3306"]
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./server/sql/001_dispatch_persistence.sql:/docker-entrypoint-initdb.d/001_dispatch_persistence.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-udispatch", "-pdispatch_dev_password"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7.2-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    ports: ["127.0.0.1:6379:6379"]
+    volumes: ["redis_data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  mysql_data:
+  redis_data:

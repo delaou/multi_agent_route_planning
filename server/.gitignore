@@ -1,0 +1,3 @@
+build/*.d
+logs/*.log
+logs/*.log.*

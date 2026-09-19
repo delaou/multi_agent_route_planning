@@ -1,0 +1,27 @@
+# Local agent metadata
+.agents/
+.codex/
+
+# Editors and operating systems
+.vscode/
+.vs/
+.idea/
+.DS_Store
+Thumbs.db
+*.user
+*.suo
+*.pdb
+
+# C++ build and runtime output
+server/bin/
+server/build/
+server/logs/
+server/.local-launcher/
+server/config/config.yaml
+*.o
+*.d
+
+# Cities: Skylines mod build output and restored packages
+cities-skylines-mod/bin/
+cities-skylines-mod/obj/
+cities-skylines-mod/packages/

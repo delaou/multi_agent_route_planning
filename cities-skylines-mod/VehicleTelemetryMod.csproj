@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{97DAF521-19A6-4A55-9651-536C507B157B}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <RootNamespace>VehicleTelemetryMod</RootNamespace>
+    <AssemblyName>VehicleTelemetryMod</AssemblyName>
+    <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <LangVersion>3</LangVersion>
+    <CitiesSkylinesPath Condition=" '$(CitiesSkylinesPath)' == '' ">D:\Steam\steamapps\common\Cities_Skylines</CitiesSkylinesPath>
+    <!-- Compile against the same legacy Mono libraries that the game loads. -->
+    <FrameworkPathOverride>$(CitiesSkylinesPath)\Cities_Data\Managed</FrameworkPathOverride>
+    <ModOutputPath>$(LOCALAPPDATA)\Colossal Order\Cities_Skylines\Addons\Mods\VehicleTelemetryMod</ModOutputPath>
+    <TargetFrameworkProfile />
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="CitiesHarmony.API">
+      <HintPath>lib\CitiesHarmony.API.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="CitiesHarmony.Harmony">
+      <HintPath>lib\CitiesHarmony.Harmony.dll</HintPath>
+      <!-- 仅用于编译；运行时由 CitiesHarmony 依赖 Mod 统一提供。 -->
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(CitiesSkylinesPath)\Cities_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="ColossalManaged">
+      <HintPath>$(CitiesSkylinesPath)\Cities_Data\Managed\ColossalManaged.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="ICities">
+      <HintPath>$(CitiesSkylinesPath)\Cities_Data\Managed\ICities.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(CitiesSkylinesPath)\Cities_Data\Managed\UnityEngine.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Mod.cs" />
+    <Compile Include="ModLog.cs" />
+    <Compile Include="LoadingExtension.cs" />
+    <Compile Include="VehicleSnapshotCollector.cs" />
+    <Compile Include="LineRouteCollector.cs" />
+    <Compile Include="TrainSnapshotCollector.cs" />
+    <Compile Include="DispatchCommandPoller.cs" />
+    <Compile Include="DispatchRuntime.cs" />
+    <Compile Include="HarmonyPatcher.cs" />
+    <Compile Include="TrainMotionController.cs" />
+    <Compile Include="TelemetrySender.cs" />
+    <Compile Include="Models\VehicleDto.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+    <None Include="README.md" />
+    <None Include="lib\CitiesHarmony.API.dll" />
+    <None Include="lib\CitiesHarmony.Harmony.dll" />
+    <None Include="lib\CitiesHarmony.LICENSE" />
+  </ItemGroup>
+  <Target Name="DeployMod" AfterTargets="Build" Condition=" '$(SkipModDeployment)' != 'true' ">
+    <MakeDir Directories="$(ModOutputPath)" />
+    <Copy SourceFiles="$(TargetPath);$(ProjectDir)lib\CitiesHarmony.API.dll"
+          DestinationFolder="$(ModOutputPath)" />
+  </Target>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

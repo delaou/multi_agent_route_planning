@@ -1,0 +1,77 @@
+server:
+  port: 8080
+  thread_num: 8
+  trig_mode: 1
+  actor_model: 0
+  timeout_ms: 60000
+  daemon: false
+
+log:
+  level: INFO
+  path: ./logs
+  async: true
+
+mysql:
+  enabled: false
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  password: ""
+  database: webserver
+  pool_size: 8
+  auto_migrate: true
+  telemetry_history_enabled: true
+  # Restore unfinished PENDING/ACCEPTED commands after a server restart.
+  command_recovery_enabled: false
+
+# Optional response cache. Failures fall back to the in-memory path.
+redis:
+  enabled: false
+  host: 127.0.0.1
+  port: 6379
+  password: ""
+  database: 0
+  pool_size: 4
+  connect_timeout_ms: 100
+  command_timeout_ms: 20
+  response_cache_ttl_ms: 250
+  key_prefix: "multi_agent:"
+  realtime_ttl_ms: 15000
+  rolling_plan_ttl_ms: 60000
+  command_ttl_ms: 86400000
+  stream_max_len: 100000
+
+dispatch:
+  shared_min_headway_ms: 5000
+  intersection_clearance_ms: 2000
+  shared_corridor_capacity: 8
+  maximum_wait_ms: 20000
+  telemetry_stale_wall_ms: 1500
+  max_consecutive_release: 2
+  weights:
+    headway_urgency: 0.50
+    waiting_time: 0.30
+    fairness_credit: 0.20
+    global_plan: 0.25
+    consecutive_penalty: 0.25
+
+route_analysis:
+  # 两条轨迹在水平面内允许的最大距离，以及立体线路允许的最大高度差。
+  point_merge_tolerance: 5.0
+  shared_track_tolerance: 1.25
+  vertical_separation_tolerance: 3.0
+  # 连续匹配达到该长度后才生成共线资源。
+  shared_corridor_min_length: 60.0
+  # 小于该锐角按近似平行处理；不会生成普通交叉点。
+  intersection_min_angle_degrees: 15.0
+
+train_monitor:
+  stale_wall_ms: 5000
+  approach_distance: 2000.0
+  control_point_distance: 1000.0
+
+rolling_planner:
+  planning_horizon_ms: 300000
+  minimum_prediction_speed: 5.0
+  reorder_tolerance_ms: 10000
+  same_line_consecutive_penalty: 0.25

@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Cities: Skylines Railway Dispatch Monitor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    html, body, #map { width: 100%; height: 100%; margin: 0; }
+    body { background: #111820; color: #eef5ff; font-family: system-ui, sans-serif; }
+    .leaflet-container { background: #17212b; }
+    #panel {
+      position: fixed; z-index: 1000; top: 12px; left: 12px;
+      width: min(360px, calc(100vw - 24px));
+      color: #eef5ff; background: rgba(15, 23, 34, .92);
+      border: 1px solid rgba(148, 163, 184, .25);
+      box-shadow: 0 10px 30px rgba(0,0,0,.32);
+      border-radius: 7px; overflow: hidden;
+    }
+    #panel header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 12px; background: rgba(31, 41, 55, .72);
+      border-bottom: 1px solid rgba(148, 163, 184, .18);
+    }
+    #panel h1 { margin: 0; font-size: 15px; font-weight: 700; }
+    #status { font-size: 12px; color: #cbd5e1; }
+    #stats {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px; padding: 10px 12px 4px;
+    }
+    .stat {
+      padding: 7px 8px; background: rgba(255,255,255,.06);
+      border: 1px solid rgba(148, 163, 184, .14);
+      border-radius: 6px; min-width: 0;
+    }
+    .stat b { display: block; font-size: 18px; line-height: 1.1; }
+    .stat span { font-size: 11px; color: #cbd5e1; }
+    #toggles {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px 10px; padding: 8px 12px 12px;
+      font-size: 13px;
+    }
+    label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+    input { accent-color: #38bdf8; }
+    .train-marker {
+      width: 14px; height: 14px; border-radius: 50%;
+      border: 2px solid #07111c; background: #f97316;
+      box-shadow: 0 0 0 2px rgba(249,115,22,.36);
+    }
+    .train-release { background: #22c55e; box-shadow: 0 0 0 2px rgba(34,197,94,.36); }
+    .train-wait { background: #f59e0b; box-shadow: 0 0 0 2px rgba(245,158,11,.36); }
+    .train-inside { background: #ef4444; box-shadow: 0 0 0 2px rgba(239,68,68,.36); }
+    .legend {
+      padding: 0 12px 12px; font-size: 12px; color: #cbd5e1;
+      display: flex; gap: 10px; flex-wrap: wrap;
+    }
+    .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
+    .swatch-corridor {
+      width: 22px; height: 5px; border-radius: 3px; vertical-align: middle;
+      background: #fbbf24; border: 2px solid #fff4bd;
+      box-shadow: 0 0 5px rgba(251, 191, 36, .9);
+    }
+    .swatch-intersection { background: #7c3aed; border-radius: 1px; transform: rotate(45deg); }
+    .corridor-halo { filter: drop-shadow(0 0 4px rgba(251, 191, 36, .9)); }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <section id="panel">
+    <header>
+      <h1>Railway Dispatch Monitor</h1>
+      <div id="status">connecting</div>
+    </header>
+    <div id="stats">
+      <div class="stat"><b id="trainCount">0</b><span>trains</span></div>
+      <div class="stat"><b id="routeCount">0</b><span>lines</span></div>
+      <div class="stat"><b id="corridorCount">0</b><span>corridors</span></div>
+      <div class="stat"><b id="commandCount">0</b><span>commands</span></div>
+    </div>
+    <div id="toggles">
+      <label><input type="checkbox" data-layer="lines" checked>Lines</label>
+      <label><input type="checkbox" data-layer="trains" checked>Trains</label>
+      <label><input type="checkbox" data-layer="corridors" checked>Corridors</label>
+      <label><input type="checkbox" data-layer="intersections" checked>Intersections</label>
+      <label><input type="checkbox" data-layer="vehicles">Vehicles</label>
+      <label><input type="checkbox" data-layer="plans" checked>Plans</label>
+    </div>
+    <div class="legend">
+      <span><i class="swatch" style="background:#f97316"></i>monitored</span>
+      <span><i class="swatch" style="background:#22c55e"></i>release</span>
+      <span><i class="swatch" style="background:#ef4444"></i>train inside</span>
+      <span><i class="swatch" style="background:#f59e0b"></i>waiting</span>
+      <span><i class="swatch swatch-corridor"></i>shared corridor</span>
+      <span><i class="swatch swatch-intersection"></i>intersection</span>
+    </div>
+  </section>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map', {
+      crs: L.CRS.Simple,
+      minZoom: -5,
+      maxZoom: 3,
+      zoomSnap: 0.25
+    });
+    map.createPane('routePane').style.zIndex = 410;
+    map.createPane('corridorPane').style.zIndex = 420;
+    map.createPane('intersectionPane').style.zIndex = 430;
+    map.createPane('planPane').style.zIndex = 440;
+
+    const fallbackBounds = { min_x: -8640, max_x: 8640, min_z: -8640, max_z: 8640 };
+    let boundsInitialized = false;
+    let topologySignature = '';
+    let loadedTopologyRevision = null;
+    let loadedTopologyAlgorithmVersion = null;
+    let loadedTopologyAlgorithmFingerprint = null;
+    let refreshInFlight = false;
+
+    const layerGroups = {
+      lines: L.layerGroup().addTo(map),
+      trains: L.layerGroup().addTo(map),
+      corridors: L.layerGroup().addTo(map),
+      intersections: L.layerGroup().addTo(map),
+      vehicles: L.layerGroup(),
+      plans: L.layerGroup().addTo(map)
+    };
+
+    const trainMarkers = new Map();
+    const vehicleMarkers = new Map();
+    const statusNode = document.getElementById('status');
+
+    const serviceColors = {
+      fire: '#ff4d4f', police: '#4096ff', healthcare: '#f0f0f0',
+      garbage: '#73d13d', road: '#faad14', public_transport: '#9254de',
+      disaster: '#ff7a45', water: '#36cfc9', electricity: '#fadb14',
+      park: '#95de64', unknown: '#8c8c8c'
+    };
+
+    for (const input of document.querySelectorAll('[data-layer]')) {
+      input.addEventListener('change', () => {
+        const group = layerGroups[input.dataset.layer];
+        if (!group) return;
+        if (input.checked) group.addTo(map);
+        else {
+          group.remove();
+          if (input.dataset.layer === 'vehicles') {
+            group.clearLayers();
+            vehicleMarkers.clear();
+          }
+        }
+      });
+    }
+
+    function pointXZ(point) {
+      return [point.z, point.x];
+    }
+
+    function initializeBounds(bounds) {
+      if (boundsInitialized) return;
+      const b = bounds || fallbackBounds;
+      const leafletBounds = L.latLngBounds([b.min_z, b.min_x], [b.max_z, b.max_x]);
+      L.rectangle(leafletBounds, { color: '#42566d', weight: 1, fill: false }).addTo(map);
+      map.fitBounds(leafletBounds);
+      map.setMaxBounds(leafletBounds.pad(0.15));
+      boundsInitialized = true;
+    }
+
+    function hashColor(text) {
+      let hash = 0;
+      for (let i = 0; i < text.length; ++i) hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+      const hue = Math.abs(hash) % 360;
+      return `hsl(${hue}, 72%, 58%)`;
+    }
+
+    async function getJson(url) {
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`${url} HTTP ${response.status}`);
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || `${url} server error`);
+      return data;
+    }
+
+    function popupRows(rows) {
+      return rows.map(([key, value]) => `<b>${key}</b>: ${value}`).join('<br>');
+    }
+
+    function squaredDistance(a, b) {
+      const dx = Number(a.x || 0) - Number(b.x || 0);
+      const dz = Number(a.z || 0) - Number(b.z || 0);
+      return dx * dx + dz * dz;
+    }
+
+    // Corridor 端点可能位于线路小段内部，不能只把 start/end 连接成直线。
+    // 从最贴近端点的一条成员线路取出完整 segment 范围，再用精确端点裁切首尾。
+    function corridorPath(corridor, routesById) {
+      if (Array.isArray(corridor.geometry) && corridor.geometry.length >= 2) {
+        return corridor.geometry.map(pointXZ);
+      }
+      let best = null;
+      for (const member of corridor.members || []) {
+        const route = routesById.get(member.line_id);
+        if (!route || !Array.isArray(route.points)) continue;
+        const low = Math.min(member.start_segment, member.end_segment);
+        const high = Math.max(member.start_segment, member.end_segment);
+        if (!Number.isInteger(low) || !Number.isInteger(high) ||
+            low < 0 || high + 1 >= route.points.length) continue;
+
+        const routePoints = route.points.slice(low, high + 2);
+        const reversed = member.direction_relation === 'opposite';
+        if (reversed) routePoints.reverse();
+        const forwardScore = squaredDistance(routePoints[0], corridor.start) +
+          squaredDistance(routePoints[routePoints.length - 1], corridor.end);
+        const score = forwardScore;
+        if (!best || score < best.score) {
+          best = { routePoints, score };
+        }
+      }
+
+      if (!best) return [pointXZ(corridor.start), pointXZ(corridor.end)];
+      best.routePoints[0] = corridor.start;
+      best.routePoints[best.routePoints.length - 1] = corridor.end;
+      return best.routePoints.map(pointXZ);
+    }
+
+    function drawTopology(data) {
+      const signature = `${data.topology_revision}:${data.topology_algorithm_fingerprint}:` +
+        `${data.route_count}:${data.corridor_count}:` +
+        `${data.intersection_count}:` +
+        data.routes.map(r => `${r.line_id}/${r.points.length}`).join('|');
+      if (signature === topologySignature) return;
+      topologySignature = signature;
+
+      layerGroups.lines.clearLayers();
+      layerGroups.corridors.clearLayers();
+      layerGroups.intersections.clearLayers();
+
+      for (const route of data.routes) {
+        const points = (route.points || []).map(pointXZ);
+        if (points.length < 2) continue;
+        const color = hashColor(route.line_id);
+        L.polyline(points, { color, weight: 3, opacity: .72, pane: 'routePane' })
+          .bindPopup(popupRows([
+            ['Line', route.line_name || route.line_id],
+            ['ID', route.line_id],
+            ['Points', points.length],
+            ['Target headway', `${route.target_headway_ms || 0} ms`]
+          ]))
+          .addTo(layerGroups.lines);
+      }
+
+      const routesById = new Map(data.routes.map(route => [route.line_id, route]));
+      for (const corridor of data.corridors) {
+        const points = corridorPath(corridor, routesById);
+        // 外层浅色轮廓保证高亮在各种线路颜色和重叠区域上都清晰可见。
+        L.polyline(points, {
+          color: '#fff4bd', weight: 14, opacity: .82,
+          lineCap: 'round', lineJoin: 'round', interactive: false,
+          className: 'corridor-halo', pane: 'corridorPane'
+        }).addTo(layerGroups.corridors);
+        L.polyline(points, {
+          color: '#f59e0b', weight: 8, opacity: .96,
+          lineCap: 'round', lineJoin: 'round', pane: 'corridorPane'
+        })
+          .bindPopup(popupRows([
+            ['Shared corridor', corridor.corridor_id],
+            ['Length', `${(corridor.length || 0).toFixed(1)} m`],
+            ['Lines / direction', (corridor.members || []).map(m =>
+              `${m.line_id}: ${m.direction_relation === 'opposite' ? '← reverse' : '→ forward'} ` +
+              `[${Number(m.start_position ?? m.start_segment).toFixed(2)}–${Number(m.end_position ?? m.end_segment).toFixed(2)}]`).join('<br>')],
+            ['Geometry', `${points.length - 1} highlighted segments`]
+          ]))
+          .addTo(layerGroups.corridors);
+      }
+
+      for (const intersection of data.intersections) {
+        L.circleMarker(pointXZ(intersection.position), {
+          radius: 6, color: '#ddd6fe', fillColor: '#7c3aed',
+          fillOpacity: .82, weight: 2, dashArray: '2 2', pane: 'intersectionPane'
+        })
+          .bindPopup(popupRows([
+            ['Intersection', intersection.intersection_id],
+            ['Lines', `${intersection.line_a_id} / ${intersection.line_b_id}`],
+            ['Height', (intersection.position.y || 0).toFixed(1)]
+          ]))
+          .addTo(layerGroups.intersections);
+      }
+    }
+
+    function trainClass(phase) {
+      if (phase === 'release_pending') return 'train-marker train-release';
+      if (phase === 'inside_resource') return 'train-marker train-inside';
+      if (phase === 'waiting_permission' || phase === 'approaching') return 'train-marker train-wait';
+      return 'train-marker';
+    }
+
+    function drawTrains(data) {
+      const active = new Set();
+      for (const train of data.trains) {
+        active.add(train.train_id);
+        const point = pointXZ(train.position);
+        if (!trainMarkers.has(train.train_id)) {
+          const icon = L.divIcon({ className: '', html: '<div></div>', iconSize: [18, 18] });
+          trainMarkers.set(train.train_id, L.marker(point, { icon }).addTo(layerGroups.trains));
+        }
+
+        const marker = trainMarkers.get(train.train_id);
+        marker.setLatLng(point);
+        marker.setIcon(L.divIcon({
+          className: '',
+          html: `<div class="${trainClass(train.phase)}"></div>`,
+          iconSize: [18, 18]
+        }));
+        marker.bindPopup(popupRows([
+          ['Train', train.train_id],
+          ['Line', train.line_id],
+          ['Phase', train.phase],
+          ['Speed', Number(train.speed || 0).toFixed(2)],
+          ['Route index', train.route_index],
+          ['Direction', train.travel_direction],
+          ['Resource', train.controlled_resource_id || '-']
+        ]));
+      }
+
+      for (const [id, marker] of trainMarkers) {
+        if (!active.has(id)) {
+          marker.remove();
+          trainMarkers.delete(id);
+        }
+      }
+    }
+
+    function drawVehicles(data) {
+      initializeBounds(data.map);
+      const active = new Set();
+      for (const vehicle of data.vehicles) {
+        active.add(vehicle.id);
+        const point = pointXZ(vehicle.position);
+        const color = serviceColors[vehicle.service] || serviceColors.unknown;
+        if (!vehicleMarkers.has(vehicle.id)) {
+          vehicleMarkers.set(vehicle.id, L.circleMarker(point, {
+            radius: 3, color, fillColor: color, fillOpacity: .85, weight: 1
+          }).addTo(layerGroups.vehicles));
+        }
+        const marker = vehicleMarkers.get(vehicle.id);
+        marker.setLatLng(point);
+        marker.setStyle({ color, fillColor: color });
+        marker.bindPopup(popupRows([
+          ['Vehicle', vehicle.prefab || vehicle.id],
+          ['ID', vehicle.id],
+          ['Service', vehicle.service],
+          ['Speed', Number(vehicle.speed || 0).toFixed(2)]
+        ]));
+      }
+
+      for (const [id, marker] of vehicleMarkers) {
+        if (!active.has(id)) {
+          marker.remove();
+          vehicleMarkers.delete(id);
+        }
+      }
+    }
+
+    function drawPlans(data) {
+      layerGroups.plans.clearLayers();
+      for (const plan of data.plans || []) {
+        for (const train of plan.trains || []) {
+          if (!train.within_planning_horizon) continue;
+          const marker = trainMarkers.get(train.train_id);
+          if (!marker) continue;
+          const p = marker.getLatLng();
+          L.circleMarker(p, {
+            radius: 12, color: '#38bdf8', fill: false,
+            opacity: .7, weight: 1, pane: 'planPane'
+          })
+            .bindPopup(popupRows([
+              ['Plan resource', plan.corridor_resource_id],
+              ['Train', train.train_id],
+              ['Rank', train.suggested_rank ?? '-'],
+              ['ETA', `${train.estimated_arrival_simulation_ms} ms`],
+              ['Priority', Number(train.global_priority || 0).toFixed(3)]
+            ]))
+            .addTo(layerGroups.plans);
+        }
+      }
+    }
+
+    async function refresh() {
+      if (refreshInFlight) return;
+      refreshInFlight = true;
+      try {
+        initializeBounds(fallbackBounds);
+        const showVehicles = document.querySelector('[data-layer="vehicles"]').checked;
+        const [vehicles, trains, runtime, plans, commands] = await Promise.all([
+          showVehicles ? getJson('/api/game/vehicles') : Promise.resolve(null),
+          getJson('/api/game/trains'),
+          getJson('/api/game/status'),
+          getJson('/api/game/dispatch/plans'),
+          getJson('/api/game/dispatch/commands')
+        ]);
+
+        if (vehicles) drawVehicles(vehicles);
+        if (loadedTopologyRevision !== runtime.topology_revision ||
+            loadedTopologyAlgorithmVersion !== runtime.topology_algorithm_version ||
+            loadedTopologyAlgorithmFingerprint !== runtime.topology_algorithm_fingerprint) {
+            // 配置容差变化也会改变拓扑，即使持久化 revision 没变。
+          const topology = await getJson('/api/game/topology');
+          drawTopology(topology);
+          loadedTopologyRevision = topology.topology_revision;
+          loadedTopologyAlgorithmVersion = topology.topology_algorithm_version;
+          loadedTopologyAlgorithmFingerprint = topology.topology_algorithm_fingerprint;
+        }
+        drawTrains(trains);
+        drawPlans(plans);
+
+        document.getElementById('trainCount').textContent = trains.train_count || 0;
+        document.getElementById('routeCount').textContent = runtime.route_count || 0;
+        document.getElementById('corridorCount').textContent = runtime.corridor_count || 0;
+        document.getElementById('commandCount').textContent = commands.command_count || 0;
+        statusNode.textContent = runtime.telemetry_connected
+          ? `game online · ${new Date().toLocaleTimeString()}`
+          : runtime.last_train_snapshot_wall_ms
+            ? `game offline · ${Math.round(runtime.train_snapshot_age_ms / 1000)}s`
+            : 'game offline · no telemetry';
+      } catch (error) {
+        statusNode.textContent = `error: ${error.message}`;
+      } finally {
+        refreshInFlight = false;
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 1000);
+  </script>
+</body>
+</html>
